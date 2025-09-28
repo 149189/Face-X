@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Face Filter</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+        }
+        
+        .container {
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            margin-bottom: 10px;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        .subtitle {
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            margin: 0 auto 30px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror the video */
+        }
+        
+        #overlayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            transform: scaleX(-1); /* Mirror the canvas to match video */
+        }
+        
+        .filters-container {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+        
+        .filter-btn {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+        
+        .filter-btn:hover {
+            transform: scale(1.1);
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .filter-btn.active {
+            border-color: #ff4081;
+            box-shadow: 0 0 15px #ff4081;
+        }
+        
+        .filter-icon {
+            font-size: 30px;
+            color: white;
+        }
+        
+        .instructions {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .status {
+            margin-top: 15px;
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 700px) {
+            .video-container {
+                width: 100%;
+                height: 400px;
+            }
+            
+            .filter-btn {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .filter-icon {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dynamic Face Filter</h1>
+        <p class="subtitle">Select a filter and watch it follow your face!</p>
+        
+        <div class="video-container">
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="overlayCanvas"></canvas>
+        </div>
+        
+        <div class="filters-container">
+            <div class="filter-btn active" data-filter="glasses">
+                <span class="filter-icon">👓</span>
+            </div>
+            <div class="filter-btn" data-filter="hat">
+                <span class="filter-icon">🎩</span>
+            </div>
+            <div class="filter-btn" data-filter="mustache">
+                <span class="filter-icon">🧔</span>
+            </div>
+            <div class="filter-btn" data-filter="dog">
+                <span class="filter-icon">🐶</span>
+            </div>
+            <div class="filter-btn" data-filter="crown">
+                <span class="filter-icon">👑</span>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <p>Allow camera access when prompted. The filter will automatically track your face.</p>
+            <p class="status" id="status">Loading face detection model...</p>
+        </div>
+    </div>
+
+    <!-- Load Face API.js from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@0.0.1/dist/face-landmarks-detection.min.js"></script>
+
+    <script>
+        // Get DOM elements
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('overlayCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusElement = document.getElementById('status');
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        
+        // Set canvas dimensions to match video
+        canvas.width = 640;
+        canvas.height = 480;
+        
+        // Current selected filter
+        let currentFilter = 'glasses';
+        
+        // Face detection model
+        let model;
+        
+        // Initialize the application
+        async function init() {
+            try {
+                statusElement.textContent = 'Loading face detection model...';
+                
+                // Load face detection model
+                model = await faceLandmarksDetection.load(
+                    faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
+                );
+                
+                statusElement.textContent = 'Model loaded. Starting camera...';
+                
+                // Start camera
+                await startCamera();
+                
+                statusElement.textContent = 'Camera started. Detecting faces...';
+                
+                // Start face detection
+                detectFaces();
+                
+            } catch (error) {
+                console.error('Error initializing:', error);
+                statusElement.textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        // Start camera
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: 640, 
+                        height: 480,
+                        facingMode: 'user'
+                    } 
+                });
+                video.srcObject = stream;
+                
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve();
+                    };
+                });
+            } catch (error) {
+                throw new Error('Camera access denied: ' + error.message);
+            }
+        }
+        
+        // Detect faces and apply filters
+        async function detectFaces() {
+            const predictions = await model.estimateFaces({
+                input: video,
+                returnTensors: false,
+                flipHorizontal: false, // Set to false since we're handling mirroring manually
+                predictIrises: false
+            });
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (predictions.length > 0) {
+                statusElement.textContent = `Face detected! Applying ${currentFilter} filter.`;
+                
+                // Draw the selected filter for each detected face
+                predictions.forEach(prediction => {
+                    drawFilter(prediction);
+                });
+            } else {
+                statusElement.textContent = 'No face detected. Make sure your face is visible.';
+            }
+            
+            // Continue detection
+            requestAnimationFrame(detectFaces);
+        }
+        
+        // Draw the selected filter based on face landmarks
+        function drawFilter(prediction) {
+            const keypoints = prediction.scaledMesh;
+            
+            // Draw different filters based on selection
+            switch(currentFilter) {
+                case 'glasses':
+                    drawGlasses(keypoints);
+                    break;
+                case 'hat':
+                    drawHat(keypoints);
+                    break;
+                case 'mustache':
+                    drawMustache(keypoints);
+                    break;
+                case 'dog':
+                    drawDogEars(keypoints);
+                    break;
+                case 'crown':
+                    drawCrown(keypoints);
+                    break;
+            }
+        }
+        
+        // Draw glasses filter
+        function drawGlasses(keypoints) {
+            // Left eye landmarks (indices from mediapipe facemesh)
+            const leftEye = keypoints[33]; // Top of left eye
+            const rightEye = keypoints[263]; // Top of right eye
+            
+            // Calculate width and position for glasses
+            const eyeDistance = Math.abs(rightEye[0] - leftEye[0]);
+            const glassesWidth = eyeDistance * 2.2;
+            const glassesHeight = glassesWidth * 0.3;
+            
+            // Position between eyes
+            const centerX = (leftEye[0] + rightEye[0]) / 2;
+            const centerY = (leftEye[1] + rightEye[1]) / 2;
+            
+            // Draw glasses frame
+            ctx.beginPath();
+            ctx.rect(centerX - glassesWidth/2, centerY - glassesHeight/2, glassesWidth, glassesHeight);
+            ctx.strokeStyle = '#ff4081';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            
+            // Draw lenses
+            const lensWidth = glassesWidth * 0.4;
+            const lensHeight = glassesHeight * 0.8;
+            
+            // Left lens
+            ctx.beginPath();
+            ctx.ellipse(centerX - glassesWidth/4, centerY, lensWidth/2, lensHeight/2, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = '#00bcd4';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Right lens
+            ctx.beginPath();
+            ctx.ellipse(centerX + glassesWidth/4, centerY, lensWidth/2, lensHeight/2, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+        // Draw hat filter
+        function drawHat(keypoints) {
+            // Use forehead points for hat positioning
+            const forehead = keypoints[10]; // Top of forehead
+            
+            const hatWidth = 150;
+            const hatHeight = 80;
+            
+            // Draw hat brim
+            ctx.beginPath();
+            ctx.ellipse(forehead[0], forehead[1] + 20, hatWidth/2, hatHeight/4, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#8B4513';
+            ctx.fill();
+            
+            // Draw hat top
+            ctx.beginPath();
+            ctx.ellipse(forehead[0], forehead[1] - 30, hatWidth/3, hatHeight, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#8B4513';
+            ctx.fill();
+            
+            // Draw hat band
+            ctx.beginPath();
+            ctx.ellipse(forehead[0], forehead[1] - 10, hatWidth/2.5, 10, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff4081';
+            ctx.fill();
+        }
+        
+        // Draw mustache filter
+        function drawMustache(keypoints) {
+            // Use points around the mouth
+            const upperLip = keypoints[0]; // Center of upper lip
+            
+            const mustacheWidth = 80;
+            const mustacheHeight = 20;
+            
+            // Draw mustache
+            ctx.beginPath();
+            ctx.ellipse(upperLip[0], upperLip[1] + 10, mustacheWidth/2, mustacheHeight/2, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#8B4513';
+            ctx.fill();
+        }
+        
+        // Draw dog ears filter
+        function drawDogEars(keypoints) {
+            // Use points at the sides of the head for ear positioning
+            const leftHead = keypoints[127]; // Left side of head
+            const rightHead = keypoints[356]; // Right side of head
+            
+            // Draw left ear
+            ctx.beginPath();
+            ctx.moveTo(leftHead[0] - 20, leftHead[1] - 60);
+            ctx.lineTo(leftHead[0] - 40, leftHead[1] - 100);
+            ctx.lineTo(leftHead[0] + 20, leftHead[1] - 80);
+            ctx.closePath();
+            ctx.fillStyle = '#8B4513';
+            ctx.fill();
+            
+            // Draw right ear
+            ctx.beginPath();
+            ctx.moveTo(rightHead[0] + 20, rightHead[1] - 60);
+            ctx.lineTo(rightHead[0] + 40, rightHead[1] - 100);
+            ctx.lineTo(rightHead[0] - 20, rightHead[1] - 80);
+            ctx.closePath();
+            ctx.fillStyle = '#8B4513';
+            ctx.fill();
+            
+            // Draw dog nose
+            const noseTip = keypoints[1];
+            ctx.beginPath();
+            ctx.ellipse(noseTip[0], noseTip[1], 15, 10, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#000';
+            ctx.fill();
+        }
+        
+        // Draw crown filter
+        function drawCrown(keypoints) {
+            // Use forehead point for crown positioning
+            const forehead = keypoints[10];
+            
+            const crownWidth = 120;
+            const crownHeight = 60;
+            
+            // Draw crown base
+            ctx.beginPath();
+            ctx.rect(forehead[0] - crownWidth/2, forehead[1] - 40, crownWidth, 10);
+            ctx.fillStyle = 'gold';
+            ctx.fill();
+            
+            // Draw crown points
+            const pointWidth = crownWidth / 5;
+            for (let i = 0; i < 5; i++) {
+                const x = forehead[0] - crownWidth/2 + i * pointWidth + pointWidth/2;
+                
+                ctx.beginPath();
+                ctx.moveTo(x, forehead[1] - 40);
+                ctx.lineTo(x - pointWidth/2, forehead[1] - 70);
+                ctx.lineTo(x + pointWidth/2, forehead[1] - 70);
+                ctx.closePath();
+                ctx.fillStyle = 'gold';
+                ctx.fill();
+                
+                // Add jewel to middle point
+                if (i === 2) {
+                    ctx.beginPath();
+                    ctx.arc(x, forehead[1] - 65, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff4081';
+                    ctx.fill();
+                }
+            }
+        }
+        
+        // Set up filter selection
+        filterButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active class from all buttons
+                filterButtons.forEach(btn => btn.classList.remove('active'));
+                
+                // Add active class to clicked button
+                button.classList.add('active');
+                
+                // Update current filter
+                currentFilter = button.getAttribute('data-filter');
+            });
+        });
+        
+        // Initialize the app when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
